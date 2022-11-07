@@ -5,10 +5,15 @@ using UnityEngine;
 
 public class TitleScreenHandler : MonoBehaviour
 {
-
+    public void Start() {
+        GameScene.loadData();
+    }
     public void StartGameButton() {
-        Debug.Log("test");
-        GameScene.scenes["main"].LoadScene();
+        if (GameScene.scenes.ContainsKey("main") && GameScene.scenes["main"] != null) {
+            GameScene.scenes["main"].LoadScene();
+        } else {
+            Debug.Log("No main found");
+        }
 
     }
     public void QuitGameButton() {

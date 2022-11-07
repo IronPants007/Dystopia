@@ -3,11 +3,15 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 using Scene = UnityEngine.SceneManagement.Scene;
 
+
+
 /**
  * GameScene is NOT like a Unity Scene.
  * A GameScene stores a background, relevant characters, and a dialogue tree.
  */
 public class GameScene {
+    static string prog = null;
+    static bool hasLoaded = false;
     public static Dictionary<string, GameScene> scenes = new Dictionary<string, GameScene>(); // Stores all of our scenes!
 
     private readonly Dictionary<string, GameObject> characters;
@@ -16,39 +20,24 @@ public class GameScene {
 
 
     // Default stuff
-    static GameScene() {
-        var basicBackground = Resources.Load<Texture>("Backgrounds/outside1");
-        scenes.Add("main", new GameScene(basicBackground, new string[] { "bob", "jane" },
-            new DialogueMessage("   !", "jane",
-                new DialogueMessage("Hi there! How's your day going?", "bob",
-                    new DialogueChoice(new Dictionary<string, DialogueTree> {
-                        { "Good :)", new DialogueMessage("Yayy!","bob", new DebugEnd()) },
-                        { "Bad!!!", new DialogueMessage("Oh noooo :(","bob", new ArbitraryCodeNode(() => {GameVariables.supplies+=5; return null; }, new DialogueMessage(
-                            "Here's some supplies :)", "bob", new DebugEnd()
-                            ))) }
-                    })
-                )
-            )
-        ));
-        Debug.Log("TESTING");
-        Debug.Log(GameSceneTranslater.Tokenize(@"
-        #scene: main 
-        #background: outside1 
-        #characters: bob, jane
-        jane: '   !'
-        bob: 'Hi there! How's your day going?'
-        + 'Good :)'
-            bob: 'Yayy!'
-            > END
-        + { .happiness < 0 } 'Bad!!!'
-            bob: 'Oh noooo :('
-            { .supplies += 5 }
-            bob: 'Here's some supplies :)'
-            > END
-        "));
+    public static void loadData() {
+        if (!hasLoaded) {
+            prog = System.IO.File.ReadAllText(@"Assets\Scripts\GameData.txt");
+            hasLoaded = true;
+            Debug.Log("Loading file");
+            var tokens = GameSceneTranslater.Tokenize(prog);
+            foreach (var t in tokens) {
+                Debug.Log(t);
+            }
+            scenes = new GameSceneParser(prog).scenes;
+            Debug.Log(scenes);
+            foreach (var scene in scenes.Values) {
+                Debug.Log(scene);
+            }
+        }
     }
 
-    private GameScene(Texture background, string[] chars, DialogueTree dialogueTree) {
+    public GameScene(Texture background, string[] chars, DialogueTree dialogueTree) {
         characters = new Dictionary<string, GameObject>();
         foreach (string s in chars) {
             characters[s] = null;

@@ -11,6 +11,7 @@ using Unity.VisualScripting;
 public abstract class DialogueTree {
     public abstract void Next(); // Called to progress to the next state
     public abstract void Begin(); // Called to switch to this state
+    public abstract void PushTree(DialogueTree t); // Adds a tree to the node
 }
 
 
@@ -18,7 +19,7 @@ public abstract class DialogueTree {
 public class DialogueMessage : DialogueTree {
     public string msg;
     public string charName;
-    DialogueTree next;
+    public DialogueTree next;
     /* Characters, Expressions */
 
     public DialogueMessage(string msg, string cn, DialogueTree txt) {
@@ -70,6 +71,14 @@ public class DialogueMessage : DialogueTree {
         GameController.MouseClicked += OnClick; // Call OnClick once the user clicks (Which just advances)
     }
 
+    public override void PushTree(DialogueTree t) {
+        if (this.next == null) {
+            this.next = t;
+        } else {
+            this.next.PushTree(t);
+        }
+    }
+
     private void OnClick() {
         Next();
     }
@@ -118,6 +127,12 @@ public class DialogueChoice : DialogueTree {
         this.currentSelection = selection;
         Next();
     }
+    
+    public override void PushTree(DialogueTree t) {
+        foreach (var n in next.Values) {
+            n.PushTree(t);
+        }
+    }
 
 }
 
@@ -135,14 +150,10 @@ public class SceneChange : DialogueTree {
     public override void Begin() {
         Next(); // The second we "enter" this node, just immediately move on to the next.    
     }
-}
-
-
-// TODO This node indicates playing a visual / audio effect
-public class Effect : DialogueTree {
-    public override void Next() { }
-    public override void Begin() { }
-
+    
+    public override void PushTree(DialogueTree t) {
+        throw new CompileException("Unreachable statements behind goto statement.");
+    }
 }
 
 
@@ -150,14 +161,17 @@ public class Effect : DialogueTree {
 public class DebugEnd : DialogueTree {
     public override void Next() { } // nothin
     public override void Begin() { } // still nothin
-
+    
+    public override void PushTree(DialogueTree t) {
+        throw new CompileException("Can't have anything after DebugEnd.");
+    }
 }
 public class ArbitraryCodeNode : DialogueTree {
     private Func<Unit> code;
-    private DialogueTree tree;
+    public DialogueTree next;
     public ArbitraryCodeNode(Func<Unit> r,DialogueTree tea) {
         this.code = r;
-        this.tree = tea;
+        this.next = tea;
     }
     public override void Begin() {
         code();
@@ -165,8 +179,16 @@ public class ArbitraryCodeNode : DialogueTree {
     }
 
     public override void Next() {
-        this.tree.Begin();
+        this.next.Begin();
     }
+    public override void PushTree(DialogueTree t) {
+        if (this.next == null) {
+            this.next = t;
+        } else {
+            this.next.PushTree(t);
+        }
+    }
+    
 }
 class GameVariables {
     private static int _s = 0;
