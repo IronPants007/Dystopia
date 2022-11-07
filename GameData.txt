@@ -1,0 +1,12 @@
+#scene: main 
+#background: outside1 
+#characters: bob, jane
+jane: '   !'
+bob: "Hi there! How's your day going?"
++ 'Good :)'
+    bob: 'Yayy!'
+    > END
++ 'Bad!!!'
+    bob: 'Oh noooo :('
+    bob: "Here's some supplies :)"
+    > END
