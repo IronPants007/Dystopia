@@ -15,7 +15,7 @@ public class GameScene {
     public static Dictionary<string, GameScene> scenes = new Dictionary<string, GameScene>(); // Stores all of our scenes!
 
     private readonly Dictionary<string, GameObject> characters;
-    private readonly Texture background;
+    private readonly Sprite background;
     public readonly DialogueTree dialogueTree;
 
 
@@ -25,19 +25,11 @@ public class GameScene {
             prog = System.IO.File.ReadAllText(@"Assets\Scripts\GameData.txt");
             hasLoaded = true;
             Debug.Log("Loading file");
-            var tokens = GameSceneTranslater.Tokenize(prog);
-            foreach (var t in tokens) {
-                Debug.Log(t);
-            }
             scenes = new GameSceneParser(prog).scenes;
-            Debug.Log(scenes);
-            foreach (var scene in scenes.Values) {
-                Debug.Log(scene);
-            }
         }
     }
 
-    public GameScene(Texture background, string[] chars, DialogueTree dialogueTree) {
+    public GameScene(Sprite background, string[] chars, DialogueTree dialogueTree) {
         characters = new Dictionary<string, GameObject>();
         foreach (string s in chars) {
             characters[s] = null;
@@ -57,7 +49,7 @@ public class GameScene {
 
         // Load backdrop
         var backdrop = GameObject.FindGameObjectWithTag("Backdrop");
-        backdrop.GetComponent<SpriteRenderer>().material.mainTexture = this.background;
+        backdrop.GetComponent<SpriteRenderer>().sprite = this.background;
 
         // Hide all characters
         foreach (GameObject o in GameObject.FindGameObjectsWithTag("Character")) {

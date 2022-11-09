@@ -87,38 +87,38 @@ public class DialogueMessage : DialogueTree {
 
     // TODO This node will give the user a choice and follow the relevant branch
 public class DialogueChoice : DialogueTree {
-    Dictionary<string, DialogueTree> next; // Match a string to its relevant tree branch.
+    Dictionary<string, (Func<bool>, DialogueTree)> next; // Match a string to its relevant tree branch.
     string currentSelection; // The current selection we're looking at. 
 
-    public DialogueChoice(Dictionary<string, DialogueTree> choices) { // Accept dictionary of choices
+    public DialogueChoice(Dictionary<string, (Func<bool>, DialogueTree)> choices) { // Accept dictionary of choices
         this.next = choices;
     }
     public override void Next() {
-        this.next[currentSelection].Begin();
+        this.next[currentSelection].Item2.Begin();
         foreach (GameObject o in GameObject.FindGameObjectsWithTag("DialogueChoice")) {
             GameObject.Destroy(o);
         }
     }
     public override void Begin() {
-        Debug.Log("Created buttons!");
         const int buttonHeight = 75;
         const int buttonWidth = 400;
         int x = 0;
         foreach (string option in next.Keys) {
-            var buttonPos = new Vector2(x + buttonWidth/2, buttonHeight/2);
-            Debug.Log(buttonPos);
-            var button = Button.Instantiate(GameObject.FindGameObjectWithTag("TemplateButton").GetComponent<Button>(), buttonPos, Quaternion.identity);
-            //button.transform.SetPositionAndRotation(buttonPos, Quaternion.identity);
-            var rectTransform = button.GetComponent<RectTransform>();
-            rectTransform.SetParent(GameObject.FindGameObjectWithTag("Canvas").transform);
-            rectTransform.offsetMin = new Vector2(0, 0);
-            rectTransform.offsetMax = new Vector2(buttonWidth, buttonHeight);
-            rectTransform.position = buttonPos;
-            button.tag = "DialogueChoice";
+            if (next[option].Item1 == null || next[option].Item1()) {
+                var buttonPos = new Vector2(x + buttonWidth/2, buttonHeight/2);
+                var button = Button.Instantiate(GameObject.FindGameObjectWithTag("TemplateButton").GetComponent<Button>(), buttonPos, Quaternion.identity);
+                //button.transform.SetPositionAndRotation(buttonPos, Quaternion.identity);
+                var rectTransform = button.GetComponent<RectTransform>();
+                rectTransform.SetParent(GameObject.FindGameObjectWithTag("Canvas").transform);
+                rectTransform.offsetMin = new Vector2(0, 0);
+                rectTransform.offsetMax = new Vector2(buttonWidth, buttonHeight);
+                rectTransform.position = buttonPos;
+                button.tag = "DialogueChoice";
 
-            button.GetComponentInChildren<TextMeshProUGUI>().text = option;
-            button.onClick.AddListener(() => OnClick(option));
-            x+=buttonWidth;
+                button.GetComponentInChildren<TextMeshProUGUI>().text = option;
+                button.onClick.AddListener(() => OnClick(option));
+                x+=buttonWidth;
+            }
         }
     }
 
@@ -128,9 +128,18 @@ public class DialogueChoice : DialogueTree {
         Next();
     }
     
+    bool hasNext = false;
     public override void PushTree(DialogueTree t) {
-        foreach (var n in next.Values) {
-            n.PushTree(t);
+        if (hasNext) {
+            foreach (var n in next.Values) { // Jank method to select an arbitrary node since this doesn't follow typical iterator conventions.
+                n.Item2.PushTree(t);
+                break;
+            }
+        } else {
+            foreach (var n in next.Values) {
+                n.Item2.PushTree(t);
+            }
+            hasNext = true;
         }
     }
 
@@ -167,9 +176,9 @@ public class DebugEnd : DialogueTree {
     }
 }
 public class ArbitraryCodeNode : DialogueTree {
-    private Func<Unit> code;
+    private Action code;
     public DialogueTree next;
-    public ArbitraryCodeNode(Func<Unit> r,DialogueTree tea) {
+    public ArbitraryCodeNode(Action  r, DialogueTree tea) {
         this.code = r;
         this.next = tea;
     }
@@ -191,19 +200,19 @@ public class ArbitraryCodeNode : DialogueTree {
     
 }
 class GameVariables {
-    private static int _s = 0;
-    public static int supplies {
-        get { return _s; }
-        set { _s = value; updateStatDisplay(); }
-    }
+    private static Dictionary<String, int> data = new Dictionary<String, int>();
 
     public static void updateStatDisplay() {
         var sDisp = GameObject.FindGameObjectWithTag("SupplyDisplay");
-        sDisp.GetComponent<TextMeshProUGUI>().text = "Supplies: " + supplies.ToString();
+        sDisp.GetComponent<TextMeshProUGUI>().text = "Supplies: " + data["supplies"].ToString();
     }
 
-    public static void initStats() {
-        supplies = 0;
+    public static int Get(string name) {
+        return data.GetValueOrDefault(name, 0);
+    }
+    public static void Set(string name, int val) {
+        data[name] = val;
+        updateStatDisplay();
     }
 }
 

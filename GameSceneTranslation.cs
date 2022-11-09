@@ -67,7 +67,7 @@ public class GameSceneTranslater {
             }
             if (IsLetter(c)) { // letter = begin identifier
                 string ident = "";
-                while (i < input.Length && (IsLetter(input[i]) || IsNum(input[i]))) {
+                while (i < input.Length && (IsLetter(input[i]) || input[i] == '_' || IsNum(input[i]))) {
                     ident += input[i];
                     i++;
                 }
@@ -86,13 +86,60 @@ public class GameSceneTranslater {
                 continue;
             } else if (c == '{') { // # = begin code block
                 string code = "";
+                List<Token> codeTokens = new List<Token>();
                 i++;
                 while (i < input.Length && input[i]!='}') {
                     code += input[i];
                     i++;
                 }
                 if (code.Length==0) throw new CompileException("Code is empty." + "\n At " + lineNumber + ":" + lineIndex);
-                tokenList.Add(new CodeToken(code, lineNumber, lineIndex));
+                for (int n = 0; n < code.Length; n++) {
+                    if (IsLetter(code[n])) { // letter = begin identifier
+                        string ident = "";
+                        while (n < code.Length && (IsLetter(code[n]) || input[i] == '_' || IsNum(code[n]))) {
+                            ident += code[n];
+                            n++;
+                        }
+                        if (ident.Length==0) throw new CompileException("Identifier name is empty/invalid." + "\n At " + lineNumber + ":" + lineIndex);
+                        codeTokens.Add(new IdentifierToken(ident, lineNumber, lineIndex));
+                    } else if (IsNum(code[n]) || (code[n] == '-' && IsNum(code[n+1]))) { // letter = begin identifier
+                        var mult = 1;
+                        if (code[n] == '-') {
+                            n++;
+                            mult = -1;
+                        }
+                        string num = "";
+                        while (n < code.Length && IsNum(code[n])) {
+                            num += code[n];
+                            n++;
+                        }
+                        int resultNum;
+                        try {
+                            resultNum = int.Parse(num);
+                        } catch { throw new CompileException("Identifier name is empty/invalid." + "\n At " + lineNumber + ":" + lineIndex); }
+                        resultNum *= mult;
+                        codeTokens.Add(new IntToken(resultNum, lineNumber, lineIndex));
+                    } else if (code[n] == '>' || code[n] == '<') {
+                        if (code[n+1] == '=') {
+                            codeTokens.Add(new IdentifierToken(code[n] + "=", lineNumber, lineIndex));
+                            n++;
+                        } else {
+                            codeTokens.Add(new IdentifierToken(code[n] + "", lineNumber, lineIndex));
+                        }
+                    } else if (code[n] == '=') {
+                        codeTokens.Add(new IdentifierToken("=", lineNumber, lineIndex));
+                    } else if (code[n] == '!') {
+                        if (code[n+1] == '=') {
+                            codeTokens.Add(new IdentifierToken(code[n] + "=", lineNumber, lineIndex));
+                            n++;
+                        } else {
+                            throw new CompileException("Expected '=' to complete not-equal condition." + "\n At " + lineNumber + ":" + lineIndex);
+                        }
+                    } else if (code[n] == '+' || code[n] == '-' || code[n] == '*' || code[n] == '/') {
+                        codeTokens.Add(new IdentifierToken(code[n] + "", lineNumber, lineIndex));
+                    }
+                }
+                tokenList.Add(new CodeToken(codeTokens, lineNumber, lineIndex));
             } else if (c == '"' || c == '\'' || c == '`') { // " ' ` = begin/end string
                 char f = c;
                 string str = "";
@@ -146,13 +193,15 @@ public class GameSceneParser {
         while (tokens.Count>0) {
             if (tokens[0] is SettingToken) {
                 ParseScene();
+            } else if (tokens[0] is EndToken || tokens[0] is IndentDecToken || tokens[0] is IndentIncToken) {
+                tokens.RemoveAt(0);
             } else throw new CompileException("Expected new scene or end of file here.", tokens[0]);
         }
     }
 
     private void ParseScene() {
         string sceneName = null;
-        Texture sceneBackdrop = null;
+        Sprite sceneBackdrop = null;
         List<string> sceneCharacters = null;
         while (tokens.Count>0 && tokens[0] is SettingToken) {
             if (tokens.Count>=2 && tokens[1] is ColonToken) {
@@ -167,7 +216,7 @@ public class GameSceneParser {
                 } else if (settingName == "background") {
                     if (tokens.Count>0 && tokens[0] is IdentifierToken) {
                         var textureName = ((IdentifierToken)tokens[0]).data;
-                        var texture = Resources.Load<Texture>("Backgrounds/" + textureName);
+                        var texture = Resources.Load<Sprite>("Backgrounds/" + textureName);
                         if (texture == null) throw new CompileException("Background texture '" + textureName + "' not found.", tokens[0]);
                         sceneBackdrop = texture;
                         tokens.RemoveAt(0);
@@ -206,21 +255,29 @@ public class GameSceneParser {
             EndCheck();
             return new DialogueMessage(msg, name, null);
         } else if (tokens.Count >= 1 && tokens[0] is ChoiceDefToken) {
-            var choices = new Dictionary<string, DialogueTree>();
+            var choices = new Dictionary<string, (System.Func<bool>, DialogueTree)>();
             while (tokens.Count>0 && tokens[0] is ChoiceDefToken) {
                 if (tokens.Count>=2 && tokens[0] is ChoiceDefToken && tokens[1] is StringToken) {
                     var msg = ((StringToken)tokens[1]).data;
                     tokens.RemoveRange(0,2);
                     EndCheck();
                     var code = ParseStatements(true);
-                    choices[msg] = code;
+                    choices[msg] = (null, code);
+                } else if (tokens.Count>=3 && tokens[0] is ChoiceDefToken && tokens[1] is CodeToken && tokens[2] is StringToken) {
+                    var condition = ParseCondition(((CodeToken)tokens[1]).data);
+                    var msg = ((StringToken)tokens[2]).data;
+                    tokens.RemoveRange(0,3);
+                    EndCheck();
+                    var code = ParseStatements(true);
+                    choices[msg] = (condition, code);
                 } else throw new CompileException("Expected a valid choice statement here.", tokens[0]);
             }
             return new DialogueChoice(choices);
         } else if (tokens.Count >= 1 && tokens[0] is CodeToken) {
-            tokens.RemoveRange(0,1);
+            var code = ParseCodeStatement(((CodeToken)tokens[0]).data);
+            tokens.RemoveAt(0);
             EndCheck();
-            throw new CompileException("WIP.");
+            return new ArbitraryCodeNode(code, null);
         } else if (tokens.Count >= 2 && tokens[0] is ArrowToken && tokens[1] is IdentifierToken) {
             var name = ((IdentifierToken)tokens[1]).data;
             tokens.RemoveRange(0,2);
@@ -244,7 +301,7 @@ public class GameSceneParser {
                     break;
                 } 
             } else {
-                if (tk is SettingToken || tk is EndToken) break;
+                if (tk is SettingToken || tk is EndToken || tk is IndentDecToken) break;
             }
             if (tk is IdentifierToken || tk is ChoiceDefToken || tk is CodeToken || tk is ArrowToken) {
                 var next = ParseStatement();
@@ -255,6 +312,59 @@ public class GameSceneParser {
             throw new CompileException("Unrecognized token. Expected a statement, newline, or new scene.", tk);
         }
         return tree;
+    }
+
+    private System.Func<bool> ParseCondition(List<Token> code) {
+        if (code.Count == 3 && code[0] is IdentifierToken && code[1] is IdentifierToken && (code[2] is IntToken || code[2] is IdentifierToken)) {
+            var ident = ((IdentifierToken)code[0]).data;
+            var type = ((IdentifierToken)code[1]).data;
+            if (code[2] is IntToken) {
+                var num = ((IntToken)code[2]).data;
+                if      (type == ">")   return () => GameVariables.Get(ident) >  num;
+                else if (type == ">=")  return () => GameVariables.Get(ident) >= num;
+                else if (type == "<")   return () => GameVariables.Get(ident) <  num;
+                else if (type == "<=")  return () => GameVariables.Get(ident) <= num;
+                else if (type == "=")   return () => GameVariables.Get(ident) == num;
+                else if (type == "!=")  return () => GameVariables.Get(ident) != num;
+                else throw new CompileException("Invalid condition. Operator must be one of: >, <, >=, <=, =, !=.", code[1]);
+            } else {
+                var other = ((IdentifierToken)code[2]).data;
+                if      (type == ">")   return () => GameVariables.Get(ident) >  GameVariables.Get(other);
+                else if (type == ">=")  return () => GameVariables.Get(ident) >= GameVariables.Get(other);
+                else if (type == "<")   return () => GameVariables.Get(ident) <  GameVariables.Get(other);
+                else if (type == "<=")  return () => GameVariables.Get(ident) <= GameVariables.Get(other);
+                else if (type == "=")   return () => GameVariables.Get(ident) == GameVariables.Get(other);
+                else if (type == "!=")  return () => GameVariables.Get(ident) != GameVariables.Get(other);
+                else throw new CompileException("Invalid condition. Operator must be one of: >, <, >=, <=, =, !=.", code[1]);
+            }
+        } else {
+            throw new CompileException("Condition must be in the format: 'variable operator value'.", code[0]);
+        }
+    }
+    private System.Action ParseCodeStatement(List<Token> code) {
+        if (code.Count == 3 && code[0] is IdentifierToken && code[1] is IdentifierToken && (code[2] is IntToken || code[2] is IdentifierToken)) {
+            var ident = ((IdentifierToken)code[0]).data;
+            var type = ((IdentifierToken)code[1]).data;
+            if (code[2] is IntToken) {
+                var num = ((IntToken)code[2]).data;
+                if      (type == "=")   return () => GameVariables.Set(ident, num);
+                else if (type == "+")   return () => GameVariables.Set(ident, GameVariables.Get(ident) + num);
+                else if (type == "-")   return () => GameVariables.Set(ident, GameVariables.Get(ident) - num);
+                else if (type == "*")   return () => GameVariables.Set(ident, GameVariables.Get(ident) * num);
+                else if (type == "/")   return () => GameVariables.Set(ident, GameVariables.Get(ident) / num);
+                else throw new CompileException("Invalid expression. Operator must be one of: =, +, -, *, /.", code[1]);
+            } else {
+                var other = ((IdentifierToken)code[2]).data;
+                if      (type == "=")   return () => GameVariables.Set(ident, GameVariables.Get(other));
+                else if (type == "+")   return () => GameVariables.Set(ident, GameVariables.Get(ident) + GameVariables.Get(other));
+                else if (type == "-")   return () => GameVariables.Set(ident, GameVariables.Get(ident) - GameVariables.Get(other));
+                else if (type == "*")   return () => GameVariables.Set(ident, GameVariables.Get(ident) * GameVariables.Get(other));
+                else if (type == "/")   return () => GameVariables.Set(ident, GameVariables.Get(ident) / GameVariables.Get(other));
+                else throw new CompileException("Invalid expression. Operator must be one of: =, +, -, *, /.", code[1]);
+            }
+        } else {
+            throw new CompileException("Condition must be in the format: 'variable operator value'.", code[0]);
+        }
     }
 
     private void EndCheck() {
@@ -350,8 +460,11 @@ public class SettingToken : DataToken<string> {
 public class IdentifierToken : DataToken<string> {
     public IdentifierToken(string s, int lineNum, int lineIndex) : base(s,lineNum, lineIndex) {}
 }
-public class CodeToken : DataToken<string> {
-    public CodeToken(string s, int lineNum, int lineIndex) : base(s,lineNum, lineIndex) {}
+public class IntToken : DataToken<int> {
+    public IntToken(int s, int lineNum, int lineIndex) : base(s,lineNum, lineIndex) {}
+}
+public class CodeToken : DataToken<List<Token>> {
+    public CodeToken(List<Token> s, int lineNum, int lineIndex) : base(s,lineNum, lineIndex) {}
 }
 public class StringToken : DataToken<string> {
     public StringToken(string s, int lineNum, int lineIndex) : base(s,lineNum, lineIndex) {}

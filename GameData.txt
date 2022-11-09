@@ -5,8 +5,17 @@ jane: '   !'
 bob: "Hi there! How's your day going?"
 + 'Good :)'
     bob: 'Yayy!'
-    > END
-+ 'Bad!!!'
++ { supplies <= 0 } 'Bad!!!'
     bob: 'Oh noooo :('
+    { supplies + 5 }
     bob: "Here's some supplies :)"
-    > END
+jane: "Let's camp here until night"
+> nightScene
+
+
+#scene: nightScene
+#background: outside_night1
+#characters: bob, jane
+bob: "Wow it sure is dark out!"
+jane: "Yeah!"
+> END
